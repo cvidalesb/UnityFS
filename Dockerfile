@@ -1,6 +1,3 @@
-# This Dockerfile is for Railway deployment
-# It uses the minimal package list to avoid build errors
-
 FROM python:3.11-slim
 
 WORKDIR /app
