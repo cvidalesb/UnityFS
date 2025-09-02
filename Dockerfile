@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y \
     g++ \
     libffi-dev \
     libssl-dev \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python packages
@@ -18,8 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY . .
 
-# Expose port
-EXPOSE 8501
+# Railway will set the PORT environment variable
+ENV PORT=8501
+EXPOSE $PORT
 
-# Run Streamlit
-CMD ["streamlit", "run", "FeeModification_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Use Railway's start command
+CMD streamlit run FeeModification_app.py --server.port=$PORT --server.address=0.0.0.0
