@@ -1,0 +1,272 @@
+import os
+import requests
+from typing import Dict, Any, Optional
+
+
+def get_all_transfers(api_key: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Calls GET /transfers with optional params and handles errors.
+    Returns JSON response on success, raises ValueError on expected errors,
+    or raises requests.HTTPError for unexpected HTTP issues.
+    """
+    url = "https://api.bridge.xyz/v0/transfers"
+    
+    headers = {
+        "Api-Key": api_key,
+        "Accept": "application/json",
+    }
+
+    try:
+        resp = requests.get(url, headers=headers, params=params or {})
+    except requests.RequestException as err:
+        # Network-level error, DNS, timeout, etc.
+        raise ValueError(f"Network error while reaching Bridge API: {err}") from err
+
+    if resp.status_code == 401:
+        raise ValueError("Unauthorized: Check your API key.")
+    if resp.status_code == 400:
+        raise ValueError(f"Bad Request: {resp.text}")
+    if resp.status_code >= 500:
+        raise ValueError(f"Server error ({resp.status_code}): Try again later.")
+
+    try:
+        data = resp.json()
+    except ValueError as err:
+        raise ValueError(f"Invalid JSON response: {err}") from err
+
+    # Optional: Check for API-specific error messaging in the JSON
+    if isinstance(data, dict) and data.get("errors"):
+        # e.g., {"errors": [...]} per API conventions
+        raise ValueError(f"API-level error: {data['errors']}")
+
+    return data
+
+
+def get_all_transfers_payload(
+    limit: Optional[int] = None,
+    starting_after: Optional[str] = None,
+    ending_before: Optional[str] = None,
+    tx_hash: Optional[str] = None,
+    updated_after_ms: Optional[int] = None,
+    updated_before_ms: Optional[int] = None,
+    state: Optional[str] = None,
+    template_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+    """
+    Builds valid query params for GET /transfers; excludes unset fields.
+    Supports additional accepted filters like state and template_id.:contentReference[oaicite:5]{index=5}
+    """
+    params: Dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    if starting_after is not None:
+        params["starting_after"] = starting_after
+    if ending_before is not None:
+        params["ending_before"] = ending_before
+    if tx_hash is not None:
+        params["tx_hash"] = tx_hash
+    if updated_after_ms is not None:
+        params["updated_after_ms"] = updated_after_ms
+    if updated_before_ms is not None:
+        params["updated_before_ms"] = updated_before_ms
+    if state is not None:
+        params["state"] = state
+    if template_id is not None:
+        params["template_id"] = template_id
+    return params
+
+
+def get_a_transfer(transfer_id: str) -> Dict[str, Any]:
+    """
+    Fetch a single transfer by its ID, with error handling.
+
+    Args:
+        transfer_id (str): The ID of the transfer to fetch.
+
+    Returns:
+        dict: The transfer data.
+
+    Raises:
+        ValueError: If the request fails or the response is invalid.
+    """
+    headers = {"Api-Key": API_KEY}
+    url = f"https://api.bridge.xyz/v0/transfers/{transfer_id}"
+
+    try:
+        resp = requests.get(url, headers=headers)
+    except requests.RequestException as e:
+        raise ValueError(f"Network error while fetching transfer: {e}")
+
+    if resp.status_code >= 500:
+        raise ValueError(f"Server error ({resp.status_code}): Try again later.")
+    if resp.status_code != 200:
+        raise ValueError(f"Failed to fetch transfer: {resp.status_code} - {resp.text}")
+
+    try:
+        data = resp.json()
+    except ValueError as err:
+        raise ValueError(f"Invalid JSON response: {err}") from err
+
+    # Optional: Check for API-specific error messaging in the JSON
+    if isinstance(data, dict) and data.get("errors"):
+        raise ValueError(f"API-level error: {data['errors']}")
+
+    return data
+
+
+def update_transfer_developer_fee(transfer_id: str, developer_fee_percent: float, api_key: str) -> dict:
+    """
+    Update the developer fee percent for a transfer.
+
+    Args:
+        transfer_id (str): The ID of the transfer to update.
+        developer_fee_percent (float): The new developer fee percent.
+        api_key (str): Your Bridge API key.
+
+    Returns:
+        dict: The response from the API.
+
+    Raises:
+        ValueError: If the request fails or the response is invalid.
+    """
+    url = f"https://api.bridge.xyz/v0/transfers/{transfer_id}"
+    payload = { "developer_fee_percent": developer_fee_percent }
+    headers = {
+        "Api-Key": api_key,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.put(url, json=payload, headers=headers)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        raise ValueError(f"Error updating developer fee: {e}")
+
+    try:
+        return response.json()
+    except ValueError as err:
+        raise ValueError(f"Invalid JSON response: {err}") from err
+
+
+def new_transfer_payload(
+    *,
+    # --- top-level ---
+    on_behalf_of: str,
+    amount: Optional[str] = None,
+    client_reference_id: Optional[str] = None,
+    developer_fee: Optional[str] = None,
+    developer_fee_percent: Optional[str] = None,
+
+    # --- source ---
+    source_payment_rail: str,
+    source_currency: str,
+    source_payment_scheme: Optional[str] = None,          # e.g. "reversed_payment" (if applicable to the rail)
+    source_external_account_id: Optional[str] = None,
+    source_bridge_wallet_id: Optional[str] = None,
+    source_from_address: Optional[str] = None,
+
+    # --- destination ---
+    dest_payment_rail: str,
+    dest_currency: str,
+    dest_external_account_id: Optional[str] = None,
+    dest_bridge_wallet_id: Optional[str] = None,
+    dest_wire_message: Optional[str] = None,
+    dest_sepa_reference: Optional[str] = None,
+    dest_swift_reference: Optional[str] = None,
+    dest_spei_reference: Optional[str] = None,
+    dest_swift_charges: Optional[str] = None,             # e.g. "our"
+    dest_ach_reference: Optional[str] = None,
+    dest_blockchain_memo: Optional[str] = None,
+    dest_deposit_id: Optional[str] = None,
+    dest_to_address: Optional[str] = None,
+
+    # --- features ---
+    flexible_amount: bool = False,
+    static_template: bool = False,
+    allow_any_from_address: bool = False,
+) -> Dict[str, Any]:
+    """
+    Build a payload for Bridge POST /v0/transfers.
+
+    Notes:
+    - If features.flexible_amount is True:
+        * You MUST use developer_fee_percent.
+        * You MUST NOT set developer_fee. (Bridge forbids fixed fee with flexible amount)
+    - Idempotency-Key header is required when you send the request (not part of this body).
+    """
+
+    # Validate flexible_amount rules (per docs)
+    if flexible_amount:
+        if developer_fee:
+            raise ValueError("flexible_amount=True forbids developer_fee; use developer_fee_percent instead.")
+        if not developer_fee_percent:
+            raise ValueError("flexible_amount=True requires developer_fee_percent.")
+
+    payload: Dict[str, Any] = {
+        "on_behalf_of": on_behalf_of,
+        "source": {
+            "payment_rail": source_payment_rail,
+            "currency": source_currency,
+        },
+        "destination": {
+            "payment_rail": dest_payment_rail,
+            "currency": dest_currency,
+        },
+    }
+
+    # Optional top-level
+    if client_reference_id:
+        payload["client_reference_id"] = client_reference_id
+    if amount:
+        payload["amount"] = amount
+    if developer_fee:
+        payload["developer_fee"] = developer_fee
+    if developer_fee_percent:
+        payload["developer_fee_percent"] = developer_fee_percent
+
+    # Optional source fields
+    if source_payment_scheme:
+        payload["source"]["payment_scheme"] = source_payment_scheme
+    if source_external_account_id:
+        payload["source"]["external_account_id"] = source_external_account_id
+    if source_bridge_wallet_id:
+        payload["source"]["bridge_wallet_id"] = source_bridge_wallet_id
+    if source_from_address:
+        payload["source"]["from_address"] = source_from_address
+
+    # Optional destination fields
+    if dest_external_account_id:
+        payload["destination"]["external_account_id"] = dest_external_account_id
+    if dest_bridge_wallet_id:
+        payload["destination"]["bridge_wallet_id"] = dest_bridge_wallet_id
+    if dest_wire_message:
+        payload["destination"]["wire_message"] = dest_wire_message
+    if dest_sepa_reference:
+        payload["destination"]["sepa_reference"] = dest_sepa_reference
+    if dest_swift_reference:
+        payload["destination"]["swift_reference"] = dest_swift_reference
+    if dest_spei_reference:
+        payload["destination"]["spei_reference"] = dest_spei_reference
+    if dest_swift_charges:
+        payload["destination"]["swift_charges"] = dest_swift_charges
+    if dest_ach_reference:
+        payload["destination"]["ach_reference"] = dest_ach_reference
+    if dest_blockchain_memo:
+        payload["destination"]["blockchain_memo"] = dest_blockchain_memo
+    if dest_deposit_id:
+        payload["destination"]["deposit_id"] = dest_deposit_id
+    if dest_to_address:
+        payload["destination"]["to_address"] = dest_to_address
+
+    # Features (only include if any True)
+    features = {}
+    if flexible_amount:
+        features["flexible_amount"] = True
+    if static_template:
+        features["static_template"] = True
+    if allow_any_from_address:
+        features["allow_any_from_address"] = True
+    if features:
+        payload["features"] = features
+
+    return payload
