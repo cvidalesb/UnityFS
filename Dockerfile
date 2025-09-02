@@ -16,22 +16,13 @@ RUN apt-get update && apt-get install -y \
     g++ \
     libffi-dev \
     libssl-dev \
-    libxml2-dev \
-    libxslt1-dev \
     zlib1g-dev \
     libjpeg-dev \
     libpng-dev \
     libfreetype6-dev \
-    liblcms2-dev \
-    libwebp-dev \
-    libtiff5-dev \
-    libopenjp2-7-dev \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libgdk-pixbuf2.0-dev \
-    libgtk-3-dev \
-    libatlas-base-dev \
+    libopenblas-dev \
     gfortran \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
